@@ -3,7 +3,7 @@
 > Practitioners start from a problem, not a topic. Each question descends into the papers that answer it — same pool as the topic collections, reorganized by entry point.
 
 ### How do I check whether my synthetic data actually preserves privacy?
-- **Attack it (adversary's view)** → [Membership Inference Attacks against Machine Learning Models](https://arxiv.org/abs/1610.05820)
+- **Attack it (adversary's view)** → [Finding Connections](http://arxiv.org/abs/2602.07126v2) · [Membership Inference Attacks against Machine Learning Models](https://arxiv.org/abs/1610.05820)
 - **Generate with DP guarantees instead** → [Tab-PE — Differentially Private Synthetic Tabular Data via Private …](https://openreview.net/forum?id=SPgqHr2jiK) · [Minimax optimal differentially private synthetic data for smooth qu…](http://arxiv.org/abs/2602.01607v3)
 - **Use an evaluation framework** → [SynQP: A Framework and Metrics for Evaluating the Quality and Priva…](http://arxiv.org/abs/2601.12124v1)
 
