@@ -4,7 +4,7 @@
 > adversarial robustness, hallucination, data quality, and more.
 > 🤖 Auto-curated from an in-house paper-tracking pipeline (arXiv + HF Daily), human-verified before promotion.
 
-**Legend**: `✅` human-verified · `🕓` auto-ingested (pending review). Each topic table is venue-first sorted.
+**Legend**: `✅` human-verified · `🕓` auto-ingested (pending review). `Date` = publication (YYYY/MM); venue tag in `Tags` — no venue tag = arXiv preprint.
 
 ## 🌱 Data-Centric
 - [🗂️ Synthetic Data](collection/synthetic-data.md) (📖8+30)
@@ -41,7 +41,7 @@ One human-verified pick per topic — see each collection for the full `✅` set
 > 📖 Each collection opens with a **Classics** table — 63 canonical pre-2026 papers (link-verified) — followed by the weekly auto-pipeline pool.
 
 ## Contributing
-See [CONTRIBUTING.md](CONTRIBUTING.md). PRs welcome — format: `✓ | Title | Venue | Type | TL;DR`.
+See [CONTRIBUTING.md](CONTRIBUTING.md). PRs welcome — format: `✓ | Date | Title | Tags | TL;DR | 요약(KO)`.
 
 ---
 <sub>Maintained by [CUBIG](https://cubig.ai) · pilot 2026-07-23 · 239 papers (63 classics + 176 auto-curated)</sub>

@@ -1,7 +1,7 @@
 # Contributing
 
 ## Entry format
-`| ✓ | Title (link) | Venue/Year | Type tags | TL;DR (one line) |`
+`| ✓ | Date (YYYY/MM) | Title (link) | Tags (modality·model·technique·artifact + venue badge; no venue = arXiv) | TL;DR (one line) | 요약(KO) |`
 
 ## Inclusion policy
 - Peer-reviewed venue or high-quality preprint
