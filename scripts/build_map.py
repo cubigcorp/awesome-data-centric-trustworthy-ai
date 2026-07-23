@@ -1,0 +1,164 @@
+#!/usr/bin/env python3
+"""build_map.py — rebuild the interactive paper map (docs/index.html).
+
+Reads every row of collection/*.md, embeds title+tags+TL;DR+요약(KO) with a local
+Qwen3-Embedding-0.6B (no external API), lays papers out with t-SNE, and writes a
+self-contained docs/index.html served by GitHub Pages.
+
+Usage:  python3 scripts/build_map.py        (from repo root or anywhere)
+Deps:   sentence-transformers, scikit-learn (model auto-downloads to ~/.cache once)
+Determinism: random_state pinned; adding papers shifts the global layout slightly.
+"""
+import re, glob, json, math, os, sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+COLORS = {'synthetic-data':'#58A6FF','privacy':'#B48CFF','de-identification-ner':'#3FD0B6',
+          'data-preprocessing':'#9CCC65','data-centric-vs-model':'#F2C14E',
+          'adversarial-robustness':'#FF7B72','hallucination-factuality':'#FF9BCE',
+          'safety-alignment':'#FFA657'}
+LABELS = {'synthetic-data':'Synthetic Data','privacy':'Privacy','de-identification-ner':'De-id & NER',
+          'data-preprocessing':'Preprocessing','data-centric-vs-model':'Data vs Model',
+          'adversarial-robustness':'Adversarial','hallucination-factuality':'Hallucination',
+          'safety-alignment':'Safety & Alignment'}
+
+def load_docs():
+    docs = []
+    for path in sorted(glob.glob(os.path.join(ROOT, 'collection', '*.md'))):
+        topic = os.path.basename(path)[:-3]
+        for l in open(path, encoding='utf-8'):
+            if not re.match(r'^\| \d{4}', l):
+                continue
+            c = l.split('|')
+            if len(c) < 7:
+                continue
+            m = re.search(r'\[([^\]]+)\]\(([^)]+)\)', c[2])
+            if not m:
+                continue
+            docs.append({'t': m.group(1)[:80], 'u': m.group(2), 'c': topic,
+                         'txt': ' '.join([m.group(1), c[3], c[4], c[5]]).strip()})
+    return docs
+
+def embed_and_project(docs):
+    from sentence_transformers import SentenceTransformer
+    import torch
+    from sklearn.manifold import TSNE
+    dev = 'mps' if torch.backends.mps.is_available() else 'cpu'
+    model = SentenceTransformer('Qwen/Qwen3-Embedding-0.6B', device=dev)
+    E = model.encode([d['txt'] for d in docs], batch_size=16, normalize_embeddings=True)
+    perp = max(5, min(15, len(docs) // 16))
+    XY = TSNE(n_components=2, perplexity=perp, metric='cosine', random_state=0,
+              init='pca', learning_rate='auto').fit_transform(E)
+    xs = [float(p[0]) for p in XY]; ys = [float(p[1]) for p in XY]
+    cx, cy = sum(xs) / len(xs), sum(ys) / len(ys)
+    r = max(max(abs(x - cx) for x in xs), max(abs(y - cy) for y in ys)) or 1
+    for i, d in enumerate(docs):
+        d['x'] = round(0.5 + (xs[i] - cx) / (2 * r), 4)
+        d['y'] = round(0.5 + (ys[i] - cy) / (2 * r), 4)
+        del d['txt']
+    return docs
+
+def neighbor_purity(docs, k=5):
+    same = 0
+    for a in docs:
+        ds = sorted((math.hypot(a['x'] - b['x'], a['y'] - b['y']), b['c'])
+                    for b in docs if b is not a)[:k]
+        same += sum(1 for _, c in ds if c == a['c'])
+    return 100 * same // (k * len(docs))
+
+TEMPLATE = '''<title>CUBIG Paper Map</title>
+<style>
+:root{--bg:#131720;--panel:#1B2130;--tx:#E8EAF0;--mut:#8B93A7;--line:#242B3D}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--tx);font-family:"Avenir Next","SF Pro Text",-apple-system,sans-serif;display:flex;flex-direction:column;overflow:hidden}
+header{display:flex;align-items:baseline;gap:14px;padding:14px 20px 10px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+h1{font-size:17px;font-weight:600;margin:0;letter-spacing:.01em}
+h1 small{color:var(--mut);font-weight:400;font-size:12.5px;margin-left:8px}
+h1 a{color:var(--mut)}
+#legend{display:flex;gap:6px;padding:9px 20px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--tx);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:4px 11px;cursor:pointer;user-select:none}
+.chip .dot{width:8px;height:8px;border-radius:50%}
+.chip .n{color:var(--mut);font-family:"SF Mono",Menlo,monospace;font-size:10.5px;font-variant-numeric:tabular-nums}
+.chip.off{opacity:.32}
+.chip:focus-visible{outline:2px solid #fff;outline-offset:1px}
+#wrap{position:relative;flex:1;min-height:0}
+canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair}
+#tip{position:absolute;pointer-events:none;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:7px 10px;font-size:12.5px;max-width:340px;line-height:1.45;display:none;box-shadow:0 6px 20px rgba(0,0,0,.45)}
+#tip .tp{color:var(--mut);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;margin-top:3px}
+footer{padding:8px 20px;border-top:1px solid var(--line);color:var(--mut);font-size:11.5px}
+</style>
+<header><h1>CUBIG Paper Map<small>__COUNT__ papers · similarity layout · hover = title · click = open paper · <a href="https://github.com/cubigcorp/awesome-data-centric-trustworthy-ai">back to the list</a></small></h1></header>
+<div id="legend"></div>
+<div id="wrap"><canvas id="cv"></canvas><div id="tip"></div></div>
+<footer>Layout: Qwen3-Embedding-0.6B (local) → t-SNE · neighbor purity __QUALITY__% · rebuilt from the collection tables — some topic overlap is real, not noise.</footer>
+<script>
+const P=__DATA__;
+const C=__COLORS__;
+const L=__LABELS__;
+const on=Object.fromEntries(Object.keys(C).map(k=>[k,true]));
+const cv=document.getElementById('cv'),tip=document.getElementById('tip'),wrap=document.getElementById('wrap');
+const leg=document.getElementById('legend');
+for(const k of Object.keys(C)){
+  const n=P.filter(p=>p.c===k).length;
+  const b=document.createElement('button');b.className='chip';b.setAttribute('aria-pressed','true');
+  b.innerHTML=`<span class="dot" style="background:${C[k]}"></span>${L[k]} <span class="n">${n}</span>`;
+  b.onclick=()=>{on[k]=!on[k];b.classList.toggle('off',!on[k]);b.setAttribute('aria-pressed',String(on[k]));draw();};
+  leg.appendChild(b);
+}
+let W,H,dpr;
+function size(){dpr=devicePixelRatio||1;W=wrap.clientWidth;H=wrap.clientHeight;cv.width=W*dpr;cv.height=H*dpr;}
+const PAD=46;
+const X=p=>PAD+p.x*(W-2*PAD), Y=p=>PAD+(1-p.y)*(H-2*PAD);
+let hov=null;
+function draw(){
+  const g=cv.getContext('2d');g.setTransform(dpr,0,0,dpr,0,0);g.clearRect(0,0,W,H);
+  for(const p of P){
+    if(!on[p.c])continue;
+    g.beginPath();g.arc(X(p),Y(p),p===hov?6:4,0,7);
+    g.fillStyle=C[p.c];g.globalAlpha=p===hov?1:.82;g.fill();g.globalAlpha=1;
+    if(p===hov){g.lineWidth=1.6;g.strokeStyle='#fff';g.stroke();}
+  }
+}
+function near(mx,my){
+  let best=null,bd=144;
+  for(const p of P){if(!on[p.c])continue;
+    const d=(X(p)-mx)**2+(Y(p)-my)**2;
+    if(d<bd){bd=d;best=p;}}
+  return best;
+}
+cv.addEventListener('mousemove',e=>{
+  const r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+  const p=near(mx,my);
+  if(p!==hov){hov=p;draw();}
+  if(p){tip.style.display='block';
+    tip.style.left=Math.min(mx+14,W-360)+'px';tip.style.top=(my+14)+'px';
+    tip.innerHTML=`${p.t}<div class="tp" style="color:${C[p.c]}">${L[p.c]}</div>`;
+  } else tip.style.display='none';
+});
+cv.addEventListener('mouseleave',()=>{hov=null;tip.style.display='none';draw();});
+cv.addEventListener('click',()=>{if(hov)window.open(hov.u,'_blank','noopener');});
+addEventListener('resize',()=>{size();draw();});
+size();draw();
+</script>
+'''
+
+def main():
+    docs = load_docs()
+    if not docs:
+        sys.exit('no papers parsed — run from the repo (collection/*.md missing?)')
+    print(f'[1/3] parsed {len(docs)} papers')
+    docs = embed_and_project(docs)
+    q = neighbor_purity(docs)
+    print(f'[2/3] embedded + projected (neighbor purity {q}%)')
+    html = (TEMPLATE.replace('__DATA__', json.dumps(docs, ensure_ascii=False))
+                    .replace('__COLORS__', json.dumps(COLORS))
+                    .replace('__LABELS__', json.dumps(LABELS))
+                    .replace('__COUNT__', str(len(docs)))
+                    .replace('__QUALITY__', str(q)))
+    out = os.path.join(ROOT, 'docs', 'index.html')
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    with open(out, 'w', encoding='utf-8') as f:
+        f.write(html)
+    print(f'[3/3] wrote docs/index.html ({os.path.getsize(out)//1024}KB)')
+
+if __name__ == '__main__':
+    main()
