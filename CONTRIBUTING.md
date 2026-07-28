@@ -6,7 +6,8 @@
 ## Inclusion policy
 - Peer-reviewed venue or high-quality preprint
 - On-topic to one of the collections
-- New entries come from the weekly agent pipeline or PRs; Milestones are hand-picked canon
+- Each topic has two tables: **✋ Hand-picked** (chosen by us — field classics plus papers we hit in our own experiments) and **🤖 Agent-curated** (weekly pipeline output, not yet read by us)
+- New entries reach Agent-curated via the weekly pipeline, or Hand-picked via PRs / our own reading
 
 ## Exclusion
 - Off-scope, duplicate, or unverifiable claims
